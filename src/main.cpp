@@ -151,7 +151,7 @@ int main(int argc, char* argv[]) {
             p.semilla = params.semilla + (unsigned int)e;  // semillas reproducibles
 
             auto ini = std::chrono::steady_clock::now();
-            BatAlgorithm ba(inst, p);
+            BatAlgorithm ba(insft, p);
             ResultadoBA res = ba.ejecutar();
             auto fin = std::chrono::steady_clock::now();
             double ms = std::chrono::duration<double, std::milli>(fin - ini).count();
