@@ -148,6 +148,18 @@ python scripts\graficar.py resultados
 | Ejecuciones por instancia | 10, con semillas 42 a 51 (reproducibles) |
 | Parámetros | N=30, T=500, fmin=0, fmax=2, A₀=1.0, r₀=0.5, α=0.9, γ=0.9 |
 
+### Estudio de sensibilidad de ParametrosBA
+
+Adicionalmente se probaron 5 escenarios de parametros, manteniendo 10 ejecuciones por instancia y semilla base 42. Los escenarios comparan la linea base con mayor diversidad poblacional, mayor profundidad iterativa, mayor exploracion global y mayor explotacion local. La comparacion usa como criterio principal el menor makespan promedio; ante empate, menor desviacion estandar y luego menor tiempo promedio.
+
+| Escenario | Proposito | Parametros principales |
+|---|---|---|
+| E1_base | Linea base actual | N=30, T=500, fmax=2, r0=0.5, alfa=0.9, gamma=0.9 |
+| E2_mayor_diversidad | Mas poblacion con presupuesto similar | N=50, T=300 |
+| E3_mayor_profundidad | Mas iteraciones con presupuesto similar | N=20, T=750 |
+| E4_exploracion_alta | Favorecer exploracion global | fmax=3, r0=0.8, alfa=0.95, gamma=0.5 |
+| E5_explotacion_local | Favorecer busqueda local | fmax=1, r0=0.2, alfa=0.9, gamma=1.5 |
+
 ### Instancias
 
 | Instancia | Trabajos × Máquinas | Archivo | Espacio de búsqueda | Origen |
@@ -219,6 +231,20 @@ Mejor secuencia (ejec. 2): [J6, J9, J17, J15, J18, J12, J2, J20, J14, J11, J7, J
 
 (Desviación estándar muestral, n−1.)
 
+### Resultados del estudio de sensibilidad
+
+Resumen de los mejores escenarios por instancia, usando menor promedio como criterio principal:
+
+| Instancia | Mejor escenario | Mejor | Peor | Promedio | Desv. est. | Tiempo prom. | Gap mejor |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Pequeña | E4_exploracion_alta | 52 | 52 | 52.00 | 0.00 | 2.28 ms | 0.00 % |
+| Mediana | E3_mayor_profundidad | 7720 | 8047 | 7815.50 | 94.96 | 3.02 ms | 0.00 % |
+| Grande | E4_exploracion_alta | 1249 | 1313 | 1269.30 | 27.19 | 4.41 ms | 0.16 % |
+
+La instancia pequeña no discrimina parametros porque todos los escenarios alcanzan el optimo. En la mediana, aumentar iteraciones con menor poblacion mejora ligeramente el promedio frente a la linea base. En la grande, el escenario de exploracion alta reduce el promedio de 1282.80 a 1269.30 y baja la desviacion de 48.22 a 27.19, por lo que es la configuracion mas estable para reC01 aunque mantiene el mismo mejor makespan 1249.
+
+Los datos completos quedan en `resultados/escenarios/resumen_escenarios.csv` y `resultados/escenarios/resumen_escenarios.md`.
+
 ### Verificación de optimalidad (punto fuerte para el informe)
 
 Para validar la calidad de las soluciones se implementó un verificador por **enumeración exhaustiva** (fuerza bruta sobre todas las permutaciones):
@@ -255,11 +281,11 @@ Generados a partir de los tiempos de inicio/fin de cada operación de la mejor s
 
 **Tiempo de ejecución.** Crece con el tamaño (3.31 → 5.39 → 7.94 ms) pero se mantiene en milisegundos: la evaluación del makespan es O(n·m) con arreglo rodante, y el presupuesto es fijo (15,000 evaluaciones). El costo por evaluación domina, por eso el tiempo escala aproximadamente con n·m (20, 60, 100 celdas).
 
-**Influencia de los parámetros.** α y γ controlan la velocidad de transición exploración→explotación: valores menores de α mantienen la sonoridad alta por más tiempo (más exploración, convergencia más lenta pero menor riesgo de estancamiento). r₀ regula cuánta búsqueda local se hace desde el inicio. El presupuesto (N×T) fue holgado para estas instancias: la última mejora ocurre antes de la mitad de las iteraciones en todos los casos.
+**Influencia de los parámetros.** El estudio de sensibilidad confirma que los parametros cambian sobre todo la estabilidad. En la instancia grande, `E4_exploracion_alta` mantuvo el mismo mejor makespan de la linea base (1249), pero redujo el promedio de 1282.80 a 1269.30 y la desviacion de 48.22 a 27.19. Esto sugiere que aumentar la exploracion global (`fmax=3`, `r0=0.8`, `alfa=0.95`, `gamma=0.5`) ayuda a evitar estancamientos tempranos en reC01. En la instancia mediana, `E3_mayor_profundidad` fue ligeramente mejor por promedio, lo que indica que mas iteraciones con menor poblacion puede ser suficiente cuando el espacio es mas pequeño.
 
 **Relación tiempo/resultado.** Para estas instancias, 500 iteraciones son más que suficientes (mejoras concentradas en el primer 44 % de la ejecución). En instancias mayores (p. ej. 50×20 de Taillard) convendría aumentar T o añadir un mecanismo de reinicio/diversificación cuando la búsqueda se estanca.
 
-**Limitaciones y mejoras futuras** (para Conclusiones): (1) el esquema de aceptación solo admite mejoras, lo que acelera la convergencia pero favorece óptimos locales — podría relajarse al estilo recocido simulado; (2) la búsqueda local usa un solo vecino por llamada — una variante con exploración del vecindario completo (best-improvement) o con NEH como solución inicial probablemente cerraría el gap de la instancia grande; (3) los parámetros se tomaron de la literatura sin calibración sistemática — un estudio de sensibilidad (variar α, γ, N) enriquecería el análisis.
+**Limitaciones y mejoras futuras** (para Conclusiones): (1) el esquema de aceptación solo admite mejoras, lo que acelera la convergencia pero favorece óptimos locales — podría relajarse al estilo recocido simulado; (2) la búsqueda local usa un solo vecino por llamada — una variante con exploración del vecindario completo (best-improvement) o con NEH como solución inicial probablemente cerraría el gap de la instancia grande; (3) la calibracion aun cubre solo 5 escenarios discretos; para trabajos futuros se podria ampliar a una busqueda factorial o a mas instancias de benchmark.
 
 ---
 

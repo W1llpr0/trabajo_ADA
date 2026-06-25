@@ -42,6 +42,12 @@ pfsp_bat.exe <instancia.txt> [opciones]
 | `--pob N` | Tamaño de la población de murciélagos | 30 |
 | `--runs N` | Número de ejecuciones independientes | 1 |
 | `--seed S` | Semilla base (la ejecución i usa S+i) | 42 |
+| `--fmin X` | Frecuencia minima | 0.0 |
+| `--fmax X` | Frecuencia maxima | 2.0 |
+| `--A0 X` | Sonoridad inicial | 1.0 |
+| `--r0 X` | Tasa de emision inicial | 0.5 |
+| `--alfa X` | Factor de reduccion de sonoridad | 0.9 |
+| `--gamma X` | Factor de crecimiento de emision | 0.9 |
 | `--out DIR` | Carpeta de salida de los CSV | `resultados` |
 | `--eval "1 2 3 ..."` | Evalúa el makespan de una secuencia dada (1-based) y termina | — |
 
@@ -52,6 +58,27 @@ pfsp_bat.exe instancias\instancia1_bas1.txt --runs 10
 pfsp_bat.exe instancias\instancia2_car5.txt --runs 10
 pfsp_bat.exe instancias\instancia3_reC01.txt --runs 10
 ```
+
+### Estudio de escenarios ParametrosBA
+
+Para comparar parametros de forma reproducible se agrego un ejecutor automatico:
+
+```
+python scripts\ejecutar_escenarios.py
+```
+
+El script compila el proyecto, ejecuta 5 escenarios sobre las 3 instancias con `--runs 10 --seed 42` y genera:
+
+- `resultados/escenarios/resumen_escenarios.csv` -- tabla consolidada para analisis.
+- `resultados/escenarios/resumen_escenarios.md` -- tabla Markdown lista para el informe.
+
+Mejores escenarios observados con esta corrida:
+
+| Instancia | Mejor escenario | Mejor | Promedio | Desv. est. | Gap mejor |
+|---|---|---:|---:|---:|---:|
+| instancia1_bas1 | E4_exploracion_alta | 52 | 52.00 | 0.00 | 0.00 % |
+| instancia2_car5 | E3_mayor_profundidad | 7720 | 7815.50 | 94.96 | 0.00 % |
+| instancia3_reC01 | E4_exploracion_alta | 1249 | 1269.30 | 27.19 | 0.16 % |
 
 Las semillas son reproducibles: con los mismos parámetros y semilla se obtiene siempre el mismo resultado.
 

@@ -10,6 +10,12 @@
 //   --pob N     tamanio de la poblacion    (defecto: 30)
 //   --runs N    numero de ejecuciones      (defecto: 1)
 //   --seed S    semilla base               (defecto: 42)
+//   --fmin X    frecuencia minima          (defecto: 0.0)
+//   --fmax X    frecuencia maxima          (defecto: 2.0)
+//   --A0 X      sonoridad inicial          (defecto: 1.0)
+//   --r0 X      tasa de emision inicial    (defecto: 0.5)
+//   --alfa X    reduccion de sonoridad     (defecto: 0.9)
+//   --gamma X   crecimiento de emision     (defecto: 0.9)
 //   --out DIR   carpeta de salida          (defecto: resultados)
 //   --eval "1 2 3 ..."  evalua una secuencia dada (1-based) y termina
 // ============================================================
@@ -22,6 +28,7 @@
 #include <iostream>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -90,7 +97,39 @@ static std::vector<int> parsearSecuencia(std::string texto, int n) {
 
 static void imprimirUso() {
     std::cout << "Uso: pfsp_bat.exe <instancia.txt> [--iter N] [--pob N] "
-                 "[--runs N] [--seed S] [--out DIR] [--eval \"1 2 3 ...\"]\n";
+                 "[--runs N] [--seed S] [--fmin X] [--fmax X] [--A0 X] "
+                 "[--r0 X] [--alfa X] [--gamma X] [--out DIR] "
+                 "[--eval \"1 2 3 ...\"]\n";
+}
+
+static void validarParametros(const ParametrosBA& params, int runs) {
+    if (params.poblacion <= 0) {
+        throw std::runtime_error("La poblacion debe ser mayor que 0.");
+    }
+    if (params.iterMax <= 0) {
+        throw std::runtime_error("Las iteraciones deben ser mayores que 0.");
+    }
+    if (runs <= 0) {
+        throw std::runtime_error("El numero de ejecuciones debe ser mayor que 0.");
+    }
+    if (params.fmin < 0.0) {
+        throw std::runtime_error("fmin debe ser mayor o igual que 0.");
+    }
+    if (params.fmax < params.fmin) {
+        throw std::runtime_error("fmax debe ser mayor o igual que fmin.");
+    }
+    if (params.A0 <= 0.0 || params.A0 > 1.0) {
+        throw std::runtime_error("A0 debe estar en el intervalo (0, 1].");
+    }
+    if (params.r0 < 0.0 || params.r0 > 1.0) {
+        throw std::runtime_error("r0 debe estar en el intervalo [0, 1].");
+    }
+    if (params.alfa <= 0.0 || params.alfa > 1.0) {
+        throw std::runtime_error("alfa debe estar en el intervalo (0, 1].");
+    }
+    if (params.gamma <= 0.0) {
+        throw std::runtime_error("gamma debe ser mayor que 0.");
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -117,10 +156,17 @@ int main(int argc, char* argv[]) {
             else if (arg == "--pob")  params.poblacion = std::stoi(siguiente());
             else if (arg == "--runs") runs = std::stoi(siguiente());
             else if (arg == "--seed") params.semilla = (unsigned int)std::stoul(siguiente());
+            else if (arg == "--fmin") params.fmin = std::stod(siguiente());
+            else if (arg == "--fmax") params.fmax = std::stod(siguiente());
+            else if (arg == "--A0")   params.A0 = std::stod(siguiente());
+            else if (arg == "--r0")   params.r0 = std::stod(siguiente());
+            else if (arg == "--alfa") params.alfa = std::stod(siguiente());
+            else if (arg == "--gamma") params.gamma = std::stod(siguiente());
             else if (arg == "--out")  dirSalida = siguiente();
             else if (arg == "--eval") secuenciaEval = siguiente();
             else throw std::runtime_error("Argumento desconocido: " + arg);
         }
+        validarParametros(params, runs);
 
         Instancia inst = cargarInstancia(rutaInstancia);
         std::cout << "Instancia: " << inst.nombre << " (" << inst.n
