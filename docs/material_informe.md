@@ -2,6 +2,8 @@
 
 Este documento reúne todo el contenido derivado del código y de los experimentos, organizado según las secciones del informe que dependen de la implementación (secciones 4 a 9 de la estructura exigida). Las tablas están listas para copiar al Word; los textos son insumos para redactar con sus propias palabras.
 
+Nota de fidelidad: este material fue contrastado con `src/pfsp.*`, `src/bat.*`, `src/main.cpp`, `scripts/ejecutar_escenarios.py`, `scripts/graficar.py` y los CSV vigentes de `resultados/`. Los 5 escenarios de parámetros agregados ya quedan documentados aquí como parte del contexto de experimentación, resultados y análisis.
+
 ---
 
 ## Sección 4 del informe: Adaptación del algoritmo al PFSP
@@ -44,8 +46,9 @@ implementada con un único vector de tamaño m (arreglo rodante): al procesar la
 
 ### Mecánica exploración → explotación
 
-- Con probabilidad `1 − r[k]` el murciélago hace búsqueda local sobre la mejor global (explotación); en caso contrario vuela con sus ecuaciones (exploración).
-- Una solución que **mejora** al murciélago se acepta solo si `rand < A[k]`. Al aceptar: `A ← α·A` (grita más bajo) y `r ← r₀·(1 − e^(−γ·t))` (pulsa más rápido). El efecto neto: al inicio domina la exploración global y, conforme se aceptan mejoras, el algoritmo se concentra en refinar la mejor solución.
+- Con probabilidad `1 − r[k]` el murciélago hace búsqueda local sobre la mejor global (explotación); en caso contrario vuela con sus ecuaciones continuas y decodifica con SPV (exploración).
+- Un candidato **igual o mejor** que la solución actual del murciélago (`fit_cand ≤ fit[k]`) se acepta solo si `rand < A[k]`. Al aceptar: `A ← α·A` y `r ← r₀·(1 − e^(−γ·t))`. En esta implementación no se aceptan soluciones peores que la solución actual del murciélago.
+- La tasa `r` actúa como umbral de búsqueda local: al evaluarse la condición `rand > r[k]`, un `r` mayor reduce la probabilidad de aplicar swap/insert y favorece más vuelos globales; un `r` menor aumenta la frecuencia de búsqueda local.
 - **Elitismo**: si un candidato supera a la mejor global, se adopta inmediatamente.
 
 ### Parámetros y criterio de parada
@@ -55,13 +58,13 @@ implementada con un único vector de tamaño m (arreglo rodante): al procesar la
 | Población N | 30 | Número de murciélagos (soluciones simultáneas) |
 | Iteraciones máx. | 500 | **Criterio de parada** |
 | f_min, f_max | 0, 2 | Rango de frecuencias (magnitud del movimiento) |
-| A₀ | 1.0 | Sonoridad inicial (probabilidad de aceptar mejoras) |
-| r₀ | 0.5 | Tasa de emisión inicial (controla cuánta búsqueda local) |
+| A₀ | 1.0 | Sonoridad inicial (probabilidad de aceptar candidatos iguales o mejores) |
+| r₀ | 0.5 | Tasa de emisión inicial (umbral que controla búsqueda local vs. vuelo global) |
 | α | 0.9 | Factor de reducción de la sonoridad |
 | γ | 0.9 | Velocidad de crecimiento de la tasa de emisión |
 | Semilla | 42 + i | Reproducibilidad (la ejecución i usa semilla 42+i) |
 
-Los valores de f, A₀, r₀, α y γ son los recomendados por Yang (2010). El presupuesto total es 30 × 500 = **15,000 evaluaciones del makespan por ejecución**.
+La línea base usa los valores por defecto de `ParametrosBA`. En cada ejecución base se evalúan 30 soluciones iniciales y luego 30 × 500 candidatos, por lo que el total real es **15,030 evaluaciones de makespan**; para comparar escenarios se usa como presupuesto principal `N × T = 15,000` candidatos.
 
 ---
 
@@ -98,11 +101,13 @@ Salida: mejor permutación π* y su makespan
 24. DEVOLVER (π*, fit*)
 ```
 
+Detalle fiel al código: la actualización de la mejor solución global se revisa siempre después de evaluar el candidato. Por eso, si `fit_cand < fit*`, el candidato se vuelve mejor global aunque no haya pasado antes por el bloque de aceptación individual del murciélago.
+
 ---
 
 ## Sección 6 del informe: Descripción de la implementación
 
-### Estructura del código (C++17, ~470 líneas)
+### Estructura del código (C++17, ~520 líneas)
 
 | Módulo | Archivos | Responsabilidad |
 |---|---|---|
@@ -114,17 +119,17 @@ Diseño: el módulo del problema no conoce al algoritmo; la clase `BatAlgorithm`
 
 ### Carga de archivos de entrada
 
-Formato: primera línea `n m`; luego una línea por trabajo con m pares `(índice_de_máquina, tiempo)`. `cargarInstancia()` valida apertura del archivo, dimensiones positivas, datos completos e índices de máquina en rango, lanzando excepciones descriptivas si algo falla.
+Formato soportado por la implementación actual: primera línea `n m`; luego una línea por trabajo con `m` pares `(índice_de_máquina, tiempo)`. Los archivos reales de `instancias/` empiezan directamente con `n m` y usan máquinas numeradas desde 0. `cargarInstancia()` valida apertura del archivo, dimensiones positivas, datos completos e índices de máquina en rango, lanzando excepciones descriptivas si algo falla.
 
 ### Generación de resultados
 
 El programa imprime en consola la mejor secuencia (formato J1..Jn), el makespan, el tiempo (cronometrado con `std::chrono::steady_clock`) y los parámetros; y escribe en `resultados/`:
 
-- `convergencia_<instancia>.csv` — mejor makespan global por iteración.
+- `convergencia_<instancia>.csv` — mejor makespan global por iteración de la mejor ejecución.
 - `gantt_<instancia>.csv` — trabajo, máquina, inicio y fin de cada operación de la mejor solución.
-- `resumen_<instancia>.csv` — makespan, semilla, tiempo y secuencia de cada ejecución (modo `--runs`).
+- `resumen_<instancia>.csv` — makespan, semilla, tiempo y secuencia de cada ejecución; se escribe cuando `--runs > 1`.
 
-Un script auxiliar (`scripts/graficar.py`, matplotlib) convierte los CSV en las figuras del informe. El modo `--eval "1 2 3 ..."` permite verificar manualmente el makespan de cualquier secuencia (útil para el video).
+Un script auxiliar (`scripts/graficar.py`, matplotlib) convierte los CSV en las figuras del informe. Puede ejecutarse sobre `resultados/` o sobre cualquier subcarpeta de escenarios que contenga CSV de convergencia y Gantt. El modo `--eval "1 2 3 ..."` permite verificar manualmente el makespan de cualquier secuencia 1-based (útil para el video y para comprobar empates de makespan).
 
 ### Compilación y ejecución
 
@@ -132,6 +137,7 @@ Un script auxiliar (`scripts/graficar.py`, matplotlib) convierte los CSV en las 
 g++ -O2 -Wall -std=c++17 src\pfsp.cpp src\bat.cpp src\main.cpp -o pfsp_bat.exe
 pfsp_bat.exe instancias\instancia1_bas1.txt --runs 10
 python scripts\graficar.py resultados
+python scripts\ejecutar_escenarios.py
 ```
 
 ---
@@ -147,18 +153,21 @@ python scripts\graficar.py resultados
 | Compilador | g++ 15.2.0 (MSYS2), flags `-O2 -Wall -std=c++17` |
 | Ejecuciones por instancia | 10, con semillas 42 a 51 (reproducibles) |
 | Parámetros | N=30, T=500, fmin=0, fmax=2, A₀=1.0, r₀=0.5, α=0.9, γ=0.9 |
+| Presupuesto base | 15,030 evaluaciones de makespan por ejecución: 30 iniciales + 30×500 candidatos |
 
-### Estudio de sensibilidad de ParametrosBA
+### Estudio de sensibilidad de `ParametrosBA`
 
-Adicionalmente se probaron 5 escenarios de parametros, manteniendo 10 ejecuciones por instancia y semilla base 42. Los escenarios comparan la linea base con mayor diversidad poblacional, mayor profundidad iterativa, mayor exploracion global y mayor explotacion local. La comparacion usa como criterio principal el menor makespan promedio; ante empate, menor desviacion estandar y luego menor tiempo promedio.
+Adicionalmente se probaron 5 escenarios de parámetros con `scripts/ejecutar_escenarios.py`. El script recompila `pfsp_bat.exe` salvo que se use `--no-build`, ejecuta cada combinación con `--runs 10 --seed 42`, escribe resultados separados en `resultados/escenarios/<escenario>/` y consolida `resumen_escenarios.csv` y `resumen_escenarios.md`. La comparación usa como criterio principal el menor makespan promedio; ante empate, menor desviación estándar y luego menor tiempo promedio.
 
-| Escenario | Proposito | Parametros principales |
-|---|---|---|
-| E1_base | Linea base actual | N=30, T=500, fmax=2, r0=0.5, alfa=0.9, gamma=0.9 |
-| E2_mayor_diversidad | Mas poblacion con presupuesto similar | N=50, T=300 |
-| E3_mayor_profundidad | Mas iteraciones con presupuesto similar | N=20, T=750 |
-| E4_exploracion_alta | Favorecer exploracion global | fmax=3, r0=0.8, alfa=0.95, gamma=0.5 |
-| E5_explotacion_local | Favorecer busqueda local | fmax=1, r0=0.2, alfa=0.9, gamma=1.5 |
+Todos los escenarios mantienen `fmin=0`, `A0=1.0`, 10 ejecuciones e idéntica semilla base. Los gaps del estudio se calculan contra los valores de referencia codificados en el script: 52 para `instancia1_bas1`, 7720 para `instancia2_car5` y 1247 para `instancia3_reC01`.
+
+| Escenario | Propósito | N | T | N×T | fmax | r0 | alfa | gamma |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| E1_base | Línea base actual | 30 | 500 | 15,000 | 2 | 0.50 | 0.90 | 0.90 |
+| E2_mayor_diversidad | Más población con presupuesto similar | 50 | 300 | 15,000 | 2 | 0.50 | 0.90 | 0.90 |
+| E3_mayor_profundidad | Más iteraciones con presupuesto similar | 20 | 750 | 15,000 | 2 | 0.50 | 0.90 | 0.90 |
+| E4_exploracion_alta | Favorecer exploración global | 30 | 500 | 15,000 | 3 | 0.80 | 0.95 | 0.50 |
+| E5_explotacion_local | Favorecer búsqueda local | 30 | 500 | 15,000 | 1 | 0.20 | 0.90 | 1.50 |
 
 ### Instancias
 
@@ -233,7 +242,7 @@ Mejor secuencia (ejec. 2): [J6, J9, J17, J15, J18, J12, J2, J20, J14, J11, J7, J
 
 ### Resultados del estudio de sensibilidad
 
-Resumen de los mejores escenarios por instancia, usando menor promedio como criterio principal:
+Resumen de los mejores escenarios por instancia, usando menor promedio como criterio principal. Estos tiempos provienen del batch de `scripts/ejecutar_escenarios.py`; para comparaciones de tiempo conviene compararlos dentro de esta misma tabla, no mezclarlos con corridas base hechas en otro momento.
 
 | Instancia | Mejor escenario | Mejor | Peor | Promedio | Desv. est. | Tiempo prom. | Gap mejor |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -241,19 +250,41 @@ Resumen de los mejores escenarios por instancia, usando menor promedio como crit
 | Mediana | E3_mayor_profundidad | 7720 | 8047 | 7815.50 | 94.96 | 3.02 ms | 0.00 % |
 | Grande | E4_exploracion_alta | 1249 | 1313 | 1269.30 | 27.19 | 4.41 ms | 0.16 % |
 
-La instancia pequeña no discrimina parametros porque todos los escenarios alcanzan el optimo. En la mediana, aumentar iteraciones con menor poblacion mejora ligeramente el promedio frente a la linea base. En la grande, el escenario de exploracion alta reduce el promedio de 1282.80 a 1269.30 y baja la desviacion de 48.22 a 27.19, por lo que es la configuracion mas estable para reC01 aunque mantiene el mismo mejor makespan 1249.
+Tabla completa del estudio de sensibilidad (5 escenarios × 3 instancias):
 
-Los datos completos quedan en `resultados/escenarios/resumen_escenarios.csv` y `resultados/escenarios/resumen_escenarios.md`.
+| Escenario | Instancia | Pob. | Iter. | fmax | r0 | alfa | gamma | Mejor | Peor | Promedio | Desv. est. | Tiempo ms | Gap % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| E1_base | instancia1_bas1 | 30 | 500 | 2 | 0.50 | 0.90 | 0.90 | 52 | 52 | 52.00 | 0.00 | 2.52 | 0.00 |
+| E1_base | instancia2_car5 | 30 | 500 | 2 | 0.50 | 0.90 | 0.90 | 7720 | 8076 | 7818.70 | 98.93 | 2.95 | 0.00 |
+| E1_base | instancia3_reC01 | 30 | 500 | 2 | 0.50 | 0.90 | 0.90 | 1249 | 1390 | 1282.80 | 48.22 | 4.20 | 0.16 |
+| E2_mayor_diversidad | instancia1_bas1 | 50 | 300 | 2 | 0.50 | 0.90 | 0.90 | 52 | 52 | 52.00 | 0.00 | 2.50 | 0.00 |
+| E2_mayor_diversidad | instancia2_car5 | 50 | 300 | 2 | 0.50 | 0.90 | 0.90 | 7720 | 8076 | 7866.00 | 109.92 | 3.07 | 0.00 |
+| E2_mayor_diversidad | instancia3_reC01 | 50 | 300 | 2 | 0.50 | 0.90 | 0.90 | 1249 | 1352 | 1279.50 | 39.80 | 4.31 | 0.16 |
+| E3_mayor_profundidad | instancia1_bas1 | 20 | 750 | 2 | 0.50 | 0.90 | 0.90 | 52 | 52 | 52.00 | 0.00 | 2.52 | 0.00 |
+| E3_mayor_profundidad | instancia2_car5 | 20 | 750 | 2 | 0.50 | 0.90 | 0.90 | 7720 | 8047 | 7815.50 | 94.96 | 3.02 | 0.00 |
+| E3_mayor_profundidad | instancia3_reC01 | 20 | 750 | 2 | 0.50 | 0.90 | 0.90 | 1256 | 1363 | 1293.20 | 39.27 | 3.91 | 0.72 |
+| E4_exploracion_alta | instancia1_bas1 | 30 | 500 | 3 | 0.80 | 0.95 | 0.50 | 52 | 52 | 52.00 | 0.00 | 2.28 | 0.00 |
+| E4_exploracion_alta | instancia2_car5 | 30 | 500 | 3 | 0.80 | 0.95 | 0.50 | 7720 | 8047 | 7849.40 | 111.02 | 3.48 | 0.00 |
+| E4_exploracion_alta | instancia3_reC01 | 30 | 500 | 3 | 0.80 | 0.95 | 0.50 | 1249 | 1313 | 1269.30 | 27.19 | 4.41 | 0.16 |
+| E5_explotacion_local | instancia1_bas1 | 30 | 500 | 1 | 0.20 | 0.90 | 1.50 | 52 | 52 | 52.00 | 0.00 | 2.63 | 0.00 |
+| E5_explotacion_local | instancia2_car5 | 30 | 500 | 1 | 0.20 | 0.90 | 1.50 | 7720 | 8047 | 7831.10 | 87.58 | 3.22 | 0.00 |
+| E5_explotacion_local | instancia3_reC01 | 30 | 500 | 1 | 0.20 | 0.90 | 1.50 | 1249 | 1326 | 1284.70 | 33.34 | 3.94 | 0.16 |
 
-### Verificación de optimalidad (punto fuerte para el informe)
+La instancia pequeña no discrimina parámetros porque todos los escenarios alcanzan el óptimo de referencia 52. En la mediana, `E3_mayor_profundidad` mejora ligeramente el promedio frente a la línea base (7815.50 vs. 7818.70), aunque `E5_explotacion_local` tiene la menor desviación estándar (87.58). En la grande, `E4_exploracion_alta` reduce el promedio de 1282.80 a 1269.30 y baja la desviación de 48.22 a 27.19, por lo que es la configuración más estable para reC01 aunque mantiene el mismo mejor makespan 1249.
 
-Para validar la calidad de las soluciones se implementó un verificador por **enumeración exhaustiva** (fuerza bruta sobre todas las permutaciones):
+Los CSV completos quedan en `resultados/escenarios/resumen_escenarios.csv` y en cada subcarpeta `resultados/escenarios/E*/`. El CSV consolidado también guarda la mejor secuencia de cada escenario e instancia.
 
-| Instancia | Óptimo verificado | Resultado del BA | Gap |
+### Comparación con valores de referencia
+
+Para interpretar la calidad de las soluciones se comparan los mejores makespan contra valores de referencia. En el repositorio actual, esos valores se usan de forma explícita en `scripts/ejecutar_escenarios.py` para calcular `gap_mejor_pct`; no hay un ejecutable o script de fuerza bruta incluido en el árbol actual.
+
+| Instancia | Valor de referencia usado | Resultado del BA | Gap |
 |---|---|---|---|
-| Pequeña | 52 (exacto, 120 permutaciones) | 52 en 10/10 ejecuciones | **0 %** |
-| Mediana | 7720 (exacto, 3.6M permutaciones) | 7720 (mejor de 10) | **0 %** |
-| Grande | 1247 (mejor valor conocido en la literatura para reC01; fuerza bruta inviable: 2.4×10¹⁸) | 1249 | **0.16 %** |
+| Pequeña | 52 | 52 en 10/10 ejecuciones | **0 %** |
+| Mediana | 7720 | 7720 (mejor de 10) | **0 %** |
+| Grande | 1247 (mejor valor conocido para reC01 en la literatura) | 1249 | **0.16 %** |
+
+Si en el informe se afirma "óptimo exacto por enumeración" para las instancias pequeña o mediana, conviene respaldarlo como una verificación externa al programa C++ actual. Lo que sí puede afirmarse desde el código del repositorio es que `pfsp_bat.exe --eval` reproduce los makespan reportados para cualquier secuencia dada.
 
 ### Curvas de convergencia (figuras: `resultados/convergencia_*.png`)
 
@@ -273,19 +304,19 @@ Generados a partir de los tiempos de inicio/fin de cada operación de la mejor s
 
 ## Sección 9 del informe: Análisis y discusión (argumentos)
 
-**Calidad de las soluciones.** El algoritmo alcanzó el óptimo exacto (verificado por enumeración) en las instancias pequeña y mediana, y quedó a 0.16 % del mejor valor conocido en la grande. El contraste clave: en reC01 se evaluaron 15,000 permutaciones de un espacio de 2.4×10¹⁸ (fracción ~10⁻¹⁴) — la búsqueda guiada por la metaheurística logra lo que el muestreo aleatorio o la fuerza bruta no podrían.
+**Calidad de las soluciones.** El algoritmo igualó los valores de referencia en las instancias pequeña y mediana, y quedó a 0.16 % del mejor valor conocido en la grande. El contraste clave: en reC01 se evaluaron 30 soluciones iniciales y 15,000 candidatos de un espacio de 2.4×10¹⁸ permutaciones, por lo que la búsqueda guiada por la metaheurística explora solo una fracción mínima del espacio.
 
-**Estabilidad entre ejecuciones.** La variabilidad crece con el tamaño de la instancia: desviación 0.00 (pequeña), 98.93 = 1.3 % del promedio (mediana), 48.22 = 3.8 % del rango (grande). Causa: cada semilla parte de una población distinta, y el esquema sonoridad/tasa de emisión hace que el algoritmo se comprometa pronto con una región del espacio; si esa región contiene solo un óptimo local (p. ej. la ejecución 10 de reC01, makespan 1390), ya no hay mecanismo fuerte de escape. Por eso la metodología exige 10 ejecuciones y análisis estadístico: la calidad de una metaheurística estocástica se evalúa en distribución, no en una corrida.
+**Estabilidad entre ejecuciones.** La variabilidad crece con el tamaño de la instancia: desviación 0.00 (pequeña), 98.93 = 1.3 % del promedio (mediana), 48.22 = 3.8 % del promedio (grande). Causa: cada semilla parte de una población distinta, y el esquema sonoridad/tasa de emisión hace que el algoritmo se comprometa pronto con una región del espacio; si esa región contiene solo un óptimo local (p. ej. la ejecución 10 de reC01, makespan 1390), ya no hay mecanismo fuerte de escape. Por eso la metodología exige 10 ejecuciones y análisis estadístico: la calidad de una metaheurística estocástica se evalúa en distribución, no en una corrida.
 
-**Forma de la curva de convergencia.** Las curvas muestran caída abrupta inicial y estabilización temprana (última mejora en las iteraciones 1, 124 y 220 respectivamente). Esto NO indica mal funcionamiento: la curva grafica el mejor-hasta-el-momento (monótona no creciente por definición) y se aplana porque el algoritmo alcanza el óptimo o un valor muy cercano — en las instancias pequeña y mediana está demostrado que es el óptimo exacto, de modo que la línea no puede bajar más. La forma "caída rápida + meseta" es la firma de la transición exploración→explotación del BA (sonoridad decreciente, tasa de emisión creciente).
+**Forma de la curva de convergencia.** Las curvas muestran caída abrupta inicial y estabilización temprana (última mejora en las iteraciones 1, 124 y 220 respectivamente). Esto no indica mal funcionamiento: la curva grafica el mejor-hasta-el-momento (monótona no creciente por definición) y se aplana cuando el algoritmo ya no encuentra candidatos con makespan menor. En la instancia pequeña esto ocurre desde la primera iteración; en la mediana alcanza 7720 en la iteración 124; en reC01 alcanza 1249 en la iteración 220.
 
-**Tiempo de ejecución.** Crece con el tamaño (3.31 → 5.39 → 7.94 ms) pero se mantiene en milisegundos: la evaluación del makespan es O(n·m) con arreglo rodante, y el presupuesto es fijo (15,000 evaluaciones). El costo por evaluación domina, por eso el tiempo escala aproximadamente con n·m (20, 60, 100 celdas).
+**Tiempo de ejecución.** Crece con el tamaño (3.31 → 5.39 → 7.94 ms en la corrida base) pero se mantiene en milisegundos: la evaluación del makespan es O(n·m) con arreglo rodante, y el presupuesto principal es fijo (15,000 candidatos más la población inicial). El costo por evaluación domina, por eso el tiempo escala aproximadamente con n·m (20, 60, 100 celdas).
 
-**Influencia de los parámetros.** El estudio de sensibilidad confirma que los parametros cambian sobre todo la estabilidad. En la instancia grande, `E4_exploracion_alta` mantuvo el mismo mejor makespan de la linea base (1249), pero redujo el promedio de 1282.80 a 1269.30 y la desviacion de 48.22 a 27.19. Esto sugiere que aumentar la exploracion global (`fmax=3`, `r0=0.8`, `alfa=0.95`, `gamma=0.5`) ayuda a evitar estancamientos tempranos en reC01. En la instancia mediana, `E3_mayor_profundidad` fue ligeramente mejor por promedio, lo que indica que mas iteraciones con menor poblacion puede ser suficiente cuando el espacio es mas pequeño.
+**Influencia de los parámetros.** El estudio de sensibilidad confirma que los parámetros cambian sobre todo la estabilidad. En la instancia grande, `E4_exploracion_alta` mantuvo el mismo mejor makespan de la línea base (1249), pero redujo el promedio de 1282.80 a 1269.30 y la desviación de 48.22 a 27.19. Esto sugiere que una configuración con mayor amplitud de vuelo (`fmax=3`), menor reducción de sonoridad (`alfa=0.95`) y mayor umbral de emisión (`r0=0.8`) ayuda a evitar estancamientos tempranos en reC01. En la instancia mediana, `E3_mayor_profundidad` fue ligeramente mejor por promedio, lo que indica que más iteraciones con menor población puede ser suficiente cuando el espacio es más pequeño.
 
 **Relación tiempo/resultado.** Para estas instancias, 500 iteraciones son más que suficientes (mejoras concentradas en el primer 44 % de la ejecución). En instancias mayores (p. ej. 50×20 de Taillard) convendría aumentar T o añadir un mecanismo de reinicio/diversificación cuando la búsqueda se estanca.
 
-**Limitaciones y mejoras futuras** (para Conclusiones): (1) el esquema de aceptación solo admite mejoras, lo que acelera la convergencia pero favorece óptimos locales — podría relajarse al estilo recocido simulado; (2) la búsqueda local usa un solo vecino por llamada — una variante con exploración del vecindario completo (best-improvement) o con NEH como solución inicial probablemente cerraría el gap de la instancia grande; (3) la calibracion aun cubre solo 5 escenarios discretos; para trabajos futuros se podria ampliar a una busqueda factorial o a mas instancias de benchmark.
+**Limitaciones y mejoras futuras** (para Conclusiones): (1) el esquema de aceptación no admite soluciones peores que la solución actual del murciélago, lo que acelera la convergencia pero favorece óptimos locales; podría relajarse al estilo recocido simulado; (2) la búsqueda local usa un solo vecino por llamada, por lo que una variante con exploración del vecindario completo (best-improvement) o con NEH como solución inicial probablemente cerraría el gap de la instancia grande; (3) la calibración aún cubre solo 5 escenarios discretos; para trabajos futuros se podría ampliar a una búsqueda factorial o a más instancias de benchmark.
 
 ---
 
@@ -293,7 +324,7 @@ Generados a partir de los tiempos de inicio/fin de cada operación de la mejor s
 
 - **Reproducibilidad**: cualquier resultado del informe se regenera con `pfsp_bat.exe instancias\<archivo> --runs 10` (semilla base 42 por defecto). Verificado: misma semilla → resultado idéntico.
 - **Makespan de la secuencia identidad** [J1..J5] en la instancia pequeña: 57 (útil como ejemplo de cálculo manual en la sección 3 del informe; la tabla C completa puede generarse con `--eval "1 2 3 4 5"` y el CSV de Gantt).
-- El óptimo de la instancia mediana tiene empates: la fuerza bruta encontró [J4, J5, J2, J1, J3, J8, J6, J10, J9, J7] y el BA [J5, J4, J2, J1, J3, J8, J6, J10, J9, J7] — ambas con makespan 7720 (difieren solo en el orden de J4/J5).
+- La instancia mediana tiene empates al valor de referencia: `pfsp_bat.exe --eval` confirma que [J4, J5, J2, J1, J3, J8, J6, J10, J9, J7] y [J5, J4, J2, J1, J3, J8, J6, J10, J9, J7] tienen makespan 7720 (difieren solo en el orden de J4/J5).
 
 ## Referencias sugeridas (formato APA)
 
