@@ -3,7 +3,7 @@
 // Curso: Analisis y Disenio de Algoritmos - Proyecto Eval 3
 //
 // Uso:
-//   pfsp_bat.exe <instancia.txt> [opciones]
+//   pfsp.exe <instancia.txt> [opciones]
 //
 // Opciones:
 //   --iter N    iteraciones maximas        (defecto: 500)
@@ -96,7 +96,7 @@ static std::vector<int> parsearSecuencia(std::string texto, int n) {
 }
 
 static void imprimirUso() {
-    std::cout << "Uso: pfsp_bat.exe <instancia.txt> [--iter N] [--pob N] "
+    std::cout << "Uso: pfsp.exe <instancia.txt> [--iter N] [--pob N] "
                  "[--runs N] [--seed S] [--fmin X] [--fmax X] [--A0 X] "
                  "[--r0 X] [--alfa X] [--gamma X] [--out DIR] "
                  "[--eval \"1 2 3 ...\"]\n";

@@ -1,12 +1,11 @@
 """
-Ejecuta escenarios de calibracion para ParametrosBA y consolida resultados.
+Ejecuta todos los escenarios del proyecto y consolida los resultados.
 
-Uso recomendado:
+Uso:
     python scripts/ejecutar_escenarios.py
 
-Salidas principales:
-    resultados/escenarios/resumen_escenarios.csv
-    resultados/escenarios/resumen_escenarios.md
+Por defecto compila pfsp.exe, ejecuta 5 escenarios sobre las 3 instancias con
+10 corridas independientes por instancia y guarda los CSV en resultados/.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ import statistics
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Iterable
 
 
 INSTANCIAS = [
@@ -25,23 +24,27 @@ INSTANCIAS = [
         "nombre": "instancia1_bas1",
         "ruta": Path("instancias") / "instancia1_bas1.txt",
         "optimo": 52,
+        "tamano": "5x4",
     },
     {
         "nombre": "instancia2_car5",
         "ruta": Path("instancias") / "instancia2_car5.txt",
         "optimo": 7720,
+        "tamano": "10x6",
     },
     {
         "nombre": "instancia3_reC01",
         "ruta": Path("instancias") / "instancia3_reC01.txt",
         "optimo": 1247,
+        "tamano": "20x5",
     },
 ]
+
 
 ESCENARIOS = [
     {
         "nombre": "E1_base",
-        "objetivo": "Linea base actual",
+        "objetivo": "Linea base",
         "params": {
             "pob": 30,
             "iter": 500,
@@ -55,7 +58,7 @@ ESCENARIOS = [
     },
     {
         "nombre": "E2_mayor_diversidad",
-        "objetivo": "Mas poblacion con presupuesto similar",
+        "objetivo": "Mayor poblacion con menos iteraciones",
         "params": {
             "pob": 50,
             "iter": 300,
@@ -69,7 +72,7 @@ ESCENARIOS = [
     },
     {
         "nombre": "E3_mayor_profundidad",
-        "objetivo": "Mas iteraciones con presupuesto similar",
+        "objetivo": "Menor poblacion con mas iteraciones",
         "params": {
             "pob": 20,
             "iter": 750,
@@ -111,10 +114,12 @@ ESCENARIOS = [
     },
 ]
 
+
 CSV_COLUMNS = [
     "escenario",
     "objetivo",
     "instancia",
+    "tamano",
     "poblacion",
     "iteraciones",
     "fmin",
@@ -137,22 +142,32 @@ CSV_COLUMNS = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Ejecuta los 5 escenarios de ParametrosBA sobre las 3 instancias."
+        description="Ejecuta 5 escenarios del Bat Algorithm sobre las 3 instancias."
     )
-    parser.add_argument("--runs", type=int, default=10, help="Ejecuciones por instancia.")
-    parser.add_argument("--seed", type=int, default=42, help="Semilla base reproducible.")
+    parser.add_argument("--runs", type=int, default=10, help="Corridas por instancia.")
+    parser.add_argument("--seed", type=int, default=42, help="Semilla base.")
     parser.add_argument(
         "--out",
         type=Path,
         default=Path("resultados") / "escenarios",
-        help="Carpeta base para resultados consolidados.",
+        help="Carpeta base para los resultados por escenario.",
+    )
+    parser.add_argument(
+        "--exe",
+        type=Path,
+        default=Path("pfsp.exe"),
+        help="Ruta del ejecutable a usar o generar.",
     )
     parser.add_argument(
         "--no-build",
         action="store_true",
-        help="No recompila pfsp_bat.exe antes de ejecutar escenarios.",
+        help="Usa el ejecutable existente sin recompilar.",
     )
     return parser.parse_args()
+
+
+def formato_decimal(valor: object, decimales: int = 2) -> str:
+    return f"{float(valor):.{decimales}f}"
 
 
 def compilar(root: Path, exe: Path) -> None:
@@ -167,18 +182,18 @@ def compilar(root: Path, exe: Path) -> None:
         "-o",
         str(exe),
     ]
-    print("Compilando pfsp_bat.exe...")
+    print(f"Compilando {exe.name}...")
     subprocess.run(cmd, cwd=root, check=True)
 
 
-def comando_escenario(
+def comando_ejecucion(
     exe: Path,
     instancia: Path,
     out_dir: Path,
-    params: Dict[str, float],
+    params: dict[str, float],
     runs: int,
     seed: int,
-) -> List[str]:
+) -> list[str]:
     cmd = [
         str(exe),
         str(instancia),
@@ -194,28 +209,34 @@ def comando_escenario(
     return cmd
 
 
-def leer_resumen(ruta_csv: Path) -> Tuple[int, int, float, float, float, str]:
-    filas = []
-    with ruta_csv.open(newline="", encoding="utf-8") as f:
-        for fila in csv.DictReader(f):
-            filas.append(fila)
+def leer_resumen(ruta_csv: Path) -> dict[str, object]:
+    with ruta_csv.open(newline="", encoding="utf-8") as archivo:
+        filas = list(csv.DictReader(archivo))
 
     if not filas:
-        raise RuntimeError(f"El resumen esta vacio: {ruta_csv}")
+        raise RuntimeError(f"Resumen vacio: {ruta_csv}")
 
     makespans = [int(fila["makespan"]) for fila in filas]
     tiempos = [float(fila["tiempo_ms"]) for fila in filas]
-    mejor = min(makespans)
-    peor = max(makespans)
-    promedio = statistics.mean(makespans)
-    desv = statistics.stdev(makespans) if len(makespans) > 1 else 0.0
-    tiempo_prom = statistics.mean(tiempos)
     mejor_fila = min(filas, key=lambda fila: int(fila["makespan"]))
-    return mejor, peor, promedio, desv, tiempo_prom, mejor_fila["secuencia"]
+    return {
+        "mejor": min(makespans),
+        "peor": max(makespans),
+        "promedio": statistics.mean(makespans),
+        "desv_est": statistics.stdev(makespans) if len(makespans) > 1 else 0.0,
+        "tiempo_prom_ms": statistics.mean(tiempos),
+        "mejor_secuencia": mejor_fila["secuencia"],
+    }
 
 
-def ejecutar(root: Path, exe: Path, out_base: Path, runs: int, seed: int) -> List[Dict[str, object]]:
-    resultados: List[Dict[str, object]] = []
+def ejecutar_escenarios(
+    root: Path,
+    exe: Path,
+    out_base: Path,
+    runs: int,
+    seed: int,
+) -> list[dict[str, object]]:
+    resultados: list[dict[str, object]] = []
     out_base.mkdir(parents=True, exist_ok=True)
 
     for escenario in ESCENARIOS:
@@ -225,7 +246,7 @@ def ejecutar(root: Path, exe: Path, out_base: Path, runs: int, seed: int) -> Lis
 
         for instancia in INSTANCIAS:
             print(f"Ejecutando {escenario['nombre']} / {instancia['nombre']}...")
-            cmd = comando_escenario(
+            cmd = comando_ejecucion(
                 exe=exe,
                 instancia=root / instancia["ruta"],
                 out_dir=escenario_dir,
@@ -247,15 +268,15 @@ def ejecutar(root: Path, exe: Path, out_base: Path, runs: int, seed: int) -> Lis
                     f"con codigo {proc.returncode}"
                 )
 
-            resumen = escenario_dir / f"resumen_{instancia['nombre']}.csv"
-            mejor, peor, promedio, desv, tiempo_prom, secuencia = leer_resumen(resumen)
-            optimo = instancia["optimo"]
-            gap = ((mejor - optimo) / optimo) * 100.0 if optimo else 0.0
+            resumen = leer_resumen(escenario_dir / f"resumen_{instancia['nombre']}.csv")
+            optimo = int(instancia["optimo"])
+            gap = ((int(resumen["mejor"]) - optimo) / optimo) * 100.0 if optimo else 0.0
             resultados.append(
                 {
                     "escenario": escenario["nombre"],
                     "objetivo": escenario["objetivo"],
                     "instancia": instancia["nombre"],
+                    "tamano": instancia["tamano"],
                     "poblacion": params["pob"],
                     "iteraciones": params["iter"],
                     "fmin": params["fmin"],
@@ -266,50 +287,41 @@ def ejecutar(root: Path, exe: Path, out_base: Path, runs: int, seed: int) -> Lis
                     "gamma": params["gamma"],
                     "runs": runs,
                     "seed": seed,
-                    "mejor": mejor,
-                    "peor": peor,
-                    "promedio": promedio,
-                    "desv_est": desv,
-                    "tiempo_prom_ms": tiempo_prom,
                     "gap_mejor_pct": gap,
-                    "mejor_secuencia": secuencia,
+                    **resumen,
                 }
             )
     return resultados
 
 
-def escribir_csv(ruta: Path, filas: Iterable[Dict[str, object]]) -> None:
-    with ruta.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+def escribir_csv(ruta: Path, filas: Iterable[dict[str, object]]) -> None:
+    with ruta.open("w", newline="", encoding="utf-8") as archivo:
+        writer = csv.DictWriter(archivo, fieldnames=CSV_COLUMNS)
         writer.writeheader()
         for fila in filas:
             salida = dict(fila)
             for clave in ("promedio", "desv_est", "tiempo_prom_ms", "gap_mejor_pct"):
-                salida[clave] = f"{float(salida[clave]):.2f}"
+                salida[clave] = formato_decimal(salida[clave])
             writer.writerow(salida)
 
 
-def fmt_num(valor: object) -> str:
-    numero = float(valor)
-    if numero.is_integer():
-        return str(int(numero))
-    return f"{numero:.2f}"
-
-
-def mejor_por_instancia(filas: List[Dict[str, object]]) -> Dict[str, Dict[str, object]]:
-    mejores: Dict[str, Dict[str, object]] = {}
+def mejores_por_instancia(filas: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    mejores: dict[str, dict[str, object]] = {}
     for fila in filas:
         instancia = str(fila["instancia"])
         actual = mejores.get(instancia)
         if actual is None:
             mejores[instancia] = fila
             continue
+
         clave_fila = (
+            float(fila["mejor"]),
             float(fila["promedio"]),
             float(fila["desv_est"]),
             float(fila["tiempo_prom_ms"]),
         )
         clave_actual = (
+            float(actual["mejor"]),
             float(actual["promedio"]),
             float(actual["desv_est"]),
             float(actual["tiempo_prom_ms"]),
@@ -319,12 +331,12 @@ def mejor_por_instancia(filas: List[Dict[str, object]]) -> Dict[str, Dict[str, o
     return mejores
 
 
-def escribir_markdown(ruta: Path, filas: List[Dict[str, object]]) -> None:
-    mejores = mejor_por_instancia(filas)
+def escribir_markdown(ruta: Path, filas: list[dict[str, object]]) -> None:
+    mejores = mejores_por_instancia(filas)
     lineas = [
-        "# Resumen de escenarios ParametrosBA",
+        "# Resumen de escenarios",
         "",
-        "Criterio de seleccion: menor promedio; en empate, menor desviacion y luego menor tiempo.",
+        "Criterio de seleccion: menor mejor makespan; en empate, menor promedio, desviacion y tiempo.",
         "",
         "## Mejores escenarios por instancia",
         "",
@@ -357,17 +369,17 @@ def escribir_markdown(ruta: Path, filas: List[Dict[str, object]]) -> None:
     )
     for fila in filas:
         lineas.append(
-            "| {escenario} | {instancia} | {poblacion} | {iteraciones} | {fmax} | {r0} | "
-            "{alfa} | {gamma} | {mejor} | {peor} | {promedio:.2f} | {desv:.2f} | "
-            "{tiempo:.2f} | {gap:.2f} |".format(
+            "| {escenario} | {instancia} | {poblacion} | {iteraciones} | {fmax:.2f} | "
+            "{r0:.2f} | {alfa:.2f} | {gamma:.2f} | {mejor} | {peor} | "
+            "{promedio:.2f} | {desv:.2f} | {tiempo:.2f} | {gap:.2f} |".format(
                 escenario=fila["escenario"],
                 instancia=fila["instancia"],
                 poblacion=fila["poblacion"],
                 iteraciones=fila["iteraciones"],
-                fmax=fmt_num(fila["fmax"]),
-                r0=fmt_num(fila["r0"]),
-                alfa=fmt_num(fila["alfa"]),
-                gamma=fmt_num(fila["gamma"]),
+                fmax=float(fila["fmax"]),
+                r0=float(fila["r0"]),
+                alfa=float(fila["alfa"]),
+                gamma=float(fila["gamma"]),
                 mejor=fila["mejor"],
                 peor=fila["peor"],
                 promedio=float(fila["promedio"]),
@@ -382,18 +394,18 @@ def escribir_markdown(ruta: Path, filas: List[Dict[str, object]]) -> None:
 
 def main() -> int:
     args = parse_args()
-    if args.runs <= 1:
-        print("Error: usa --runs mayor que 1 para calcular desviacion estandar.", file=sys.stderr)
+    if args.runs <= 0:
+        print("Error: --runs debe ser mayor que 0.", file=sys.stderr)
         return 1
 
     root = Path(__file__).resolve().parents[1]
-    exe = root / "pfsp_bat.exe"
-    out_base = (root / args.out).resolve() if not args.out.is_absolute() else args.out
+    exe = args.exe if args.exe.is_absolute() else root / args.exe
+    out_base = args.out if args.out.is_absolute() else root / args.out
 
     try:
         if not args.no_build:
             compilar(root, exe)
-        resultados = ejecutar(root, exe, out_base, args.runs, args.seed)
+        resultados = ejecutar_escenarios(root, exe, out_base, args.runs, args.seed)
         csv_path = out_base / "resumen_escenarios.csv"
         md_path = out_base / "resumen_escenarios.md"
         escribir_csv(csv_path, resultados)
