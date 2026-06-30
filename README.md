@@ -7,7 +7,6 @@ Proyecto del curso Analisis y Diseno de Algoritmos. El repositorio implementa en
 - Marcelo Landa
 - Cesar Lujan
 - Franco Melchor
-- Frank Tapia
 
 ## Estructura del repositorio
 
